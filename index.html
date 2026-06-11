@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double RPS</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f1a;
+    --panel: #161628;
+    --panel2: #1e1e38;
+    --border: #2a2a4a;
+    --player-color: #6c63ff;
+    --cpu-color: #ff6584;
+    --text: #e0e0f0;
+    --text-dim: #7070a0;
+    --win: #4ade80;
+    --lose: #f87171;
+    --tie: #facc15;
+    --btn-bg: #1e1e38;
+    --btn-hover: #2a2a50;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+    gap: 10px;
+    overflow-x: hidden;
+  }
+
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--player-color), var(--cpu-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    max-width: 700px;
+    justify-content: center;
+  }
+
+  .turn-badge {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  .turn-badge span { color: var(--text); font-weight: 700; }
+
+  /* PANELS */
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 14px 16px;
+    width: 100%;
+    max-width: 700px;
+  }
+
+  .panel-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    color: var(--text-dim);
+  }
+
+  .panel-label.cpu { color: var(--cpu-color); }
+  .panel-label.player { color: var(--player-color); }
+
+  /* ABACUS */
+  .abacus {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  .bead {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    transition: transform 0.15s ease, background 0.2s ease, border-color 0.2s ease;
+    position: relative;
+  }
+
+  .bead.filled.player {
+    background: var(--player-color);
+    border-color: #9d97ff;
+    box-shadow: 0 0 6px rgba(108,99,255,0.5);
+  }
+
+  .bead.filled.cpu {
+    background: var(--cpu-color);
+    border-color: #ffa0b4;
+    box-shadow: 0 0 6px rgba(255,101,132,0.5);
+  }
+
+  .bead.empty {
+    background: #1a1a2e;
+    border-color: #2a2a4a;
+  }
+
+  .bead.pop {
+    animation: beadPop 0.35s ease;
+  }
+
+  @keyframes beadPop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.5); }
+    70% { transform: scale(0.9); }
+    100% { transform: scale(1); }
+  }
+
+  .hp-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .hp-label span { font-weight: 700; color: var(--text); }
+
+  /* CPU HANDS */
+  .cpu-hands {
+    display: flex;
+    gap: 12px;
+    margin-top: 10px;
+  }
+
+  .hand-card {
+    flex: 1;
+    background: var(--panel2);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    text-align: center;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hand-card .hand-label {
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .hand-card .throw-emoji {
+    font-size: 2rem;
+    display: block;
+    transition: transform 0.3s ease;
+  }
+
+  .hand-card.revealed { border-color: var(--cpu-color); box-shadow: 0 0 12px rgba(255,101,132,0.3); }
+  .hand-card.win { border-color: var(--win); box-shadow: 0 0 12px rgba(74,222,128,0.3); }
+  .hand-card.lose { border-color: var(--lose); box-shadow: 0 0 12px rgba(248,113,113,0.3); }
+  .hand-card.tie { border-color: var(--tie); box-shadow: 0 0 12px rgba(250,204,21,0.3); }
+
+  /* BATTLE ZONE */
+  .battle-zone {
+    display: flex;
+    gap: 12px;
+  }
+
+  .battle-slot {
+    flex: 1;
+    background: var(--panel2);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: center;
+    transition: border-color 0.4s ease, box-shadow 0.4s ease;
+    min-height: 100px;
+  }
+
+  .battle-slot .slot-title {
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .battle-slot .matchup {
+    font-size: 1.3rem;
+    margin-bottom: 4px;
+  }
+
+  .mult-badge {
+    display: inline-block;
+    background: #2a2a50;
+    border-radius: 8px;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+
+  .outcome-text {
+    font-size: 0.85rem;
+    font-weight: 700;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  .outcome-text.show { opacity: 1; transform: translateY(0); }
+  .outcome-text.win { color: var(--win); }
+  .outcome-text.lose { color: var(--lose); }
+  .outcome-text.tie { color: var(--tie); }
+
+  .battle-slot.win { border-color: var(--win); box-shadow: 0 0 14px rgba(74,222,128,0.25); }
+  .battle-slot.lose { border-color: var(--lose); box-shadow: 0 0 14px rgba(248,113,113,0.25); }
+  .battle-slot.tie { border-color: var(--tie); box-shadow: 0 0 14px rgba(250,204,21,0.25); }
+
+  /* THROW BUTTONS */
+  .throws-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    margin-top: 10px;
+  }
+
+  .throws-group {
+    flex: 1;
+  }
+
+  .throws-group-label {
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  .throw-btns {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .throw-btn {
+    flex: 1;
+    background: var(--btn-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 4px;
+    cursor: pointer;
+    color: var(--text);
+    font-size: 1.2rem;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.2s;
+    text-align: center;
+  }
+
+  .throw-btn:hover { background: var(--btn-hover); transform: translateY(-2px); }
+
+  .throw-btn.selected {
+    border-color: var(--player-color);
+    background: rgba(108, 99, 255, 0.15);
+    box-shadow: 0 0 10px rgba(108,99,255,0.3);
+  }
+
+  .throw-btn .btn-label {
+    display: block;
+    font-size: 0.55rem;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* STANCE BUTTONS */
+  .stance-section {
+    margin-top: 12px;
+  }
+
+  .stance-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .stance-btn {
+    background: var(--btn-bg);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    cursor: pointer;
+    color: var(--text);
+    text-align: left;
+    transition: border-color 0.2s, background 0.2s, transform 0.15s, box-shadow 0.2s;
+  }
+
+  .stance-btn:hover { background: var(--btn-hover); transform: translateY(-1px); }
+
+  .stance-btn.selected {
+    border-color: var(--player-color);
+    background: rgba(108, 99, 255, 0.15);
+    box-shadow: 0 0 10px rgba(108,99,255,0.3);
+  }
+
+  .stance-btn .stance-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stance-btn .stance-desc {
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* FIGHT BUTTON */
+  .fight-row {
+    margin-top: 12px;
+    text-align: center;
+  }
+
+  .fight-btn {
+    background: linear-gradient(135deg, var(--player-color), #9d4edd);
+    border: none;
+    border-radius: 50px;
+    padding: 12px 48px;
+    font-size: 1.1rem;
+    font-weight: 900;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: white;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 4px 20px rgba(108,99,255,0.4);
+  }
+
+  .fight-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(108,99,255,0.6);
+  }
+
+  .fight-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* BATTLE LOG */
+  .log-panel {
+    max-height: 140px;
+    overflow-y: auto;
+  }
+
+  .log-panel::-webkit-scrollbar { width: 4px; }
+  .log-panel::-webkit-scrollbar-track { background: var(--panel); }
+  .log-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .log-entry {
+    font-size: 0.72rem;
+    padding: 5px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    background: var(--panel2);
+    border-left: 3px solid var(--border);
+    color: var(--text-dim);
+    animation: slideIn 0.3s ease;
+  }
+
+  .log-entry.player-win { border-left-color: var(--win); }
+  .log-entry.player-lose { border-left-color: var(--lose); }
+  .log-entry.neutral { border-left-color: var(--tie); }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* FLOATING HP TEXT */
+  .float-hp {
+    position: fixed;
+    font-size: 1.1rem;
+    font-weight: 900;
+    pointer-events: none;
+    z-index: 100;
+    animation: floatUp 1.2s ease forwards;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+
+  .float-hp.gain { color: var(--win); }
+  .float-hp.lose { color: var(--lose); }
+
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    30% { transform: translateY(-15px) scale(1.2); }
+    100% { opacity: 0; transform: translateY(-50px) scale(0.8); }
+  }
+
+  /* GAME OVER OVERLAY */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 10, 26, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+
+  .overlay.show { opacity: 1; pointer-events: all; }
+
+  .overlay-box {
+    background: var(--panel);
+    border: 2px solid var(--border);
+    border-radius: 24px;
+    padding: 40px 48px;
+    text-align: center;
+    max-width: 360px;
+    width: 90%;
+    transform: scale(0.8);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+
+  .overlay.show .overlay-box { transform: scale(1); }
+
+  .overlay-title {
+    font-size: 2.5rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    line-height: 1;
+  }
+
+  .overlay-title.victory {
+    background: linear-gradient(135deg, #facc15, #4ade80, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .overlay-title.defeated {
+    background: linear-gradient(135deg, #f87171, #dc2626, #7f1d1d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .overlay-subtitle {
+    font-size: 1rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+
+  .overlay-turns {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    margin-bottom: 28px;
+  }
+
+  .overlay-turns span { color: var(--text); font-weight: 700; }
+
+  .play-again-btn {
+    background: linear-gradient(135deg, var(--player-color), #9d4edd);
+    border: none;
+    border-radius: 50px;
+    padding: 12px 36px;
+    font-size: 1rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(108,99,255,0.4);
+    transition: transform 0.15s, box-shadow 0.2s;
+  }
+
+  .play-again-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(108,99,255,0.6); }
+
+  /* MISC */
+  .divider {
+    width: 100%;
+    max-width: 700px;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .resolving-indicator {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    text-align: center;
+    padding: 4px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    animation: pulse 1s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 8px; gap: 8px; }
+    .bead { width: 18px; height: 18px; }
+    h1 { font-size: 1.3rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Double RPS</h1>
+  <div class="turn-badge">Turn <span id="turn-counter">1</span></div>
+</div>
+
+<!-- CPU Panel -->
+<div class="panel" id="cpu-panel">
+  <div class="panel-label cpu">CPU — Enemy</div>
+  <div class="abacus" id="cpu-abacus"></div>
+  <div class="hp-label">HP: <span id="cpu-hp-label">10</span> / 20</div>
+  <div class="cpu-hands">
+    <div class="hand-card" id="cpu-left-card">
+      <div class="hand-label">Left Hand</div>
+      <span class="throw-emoji" id="cpu-left-emoji">❓</span>
+    </div>
+    <div class="hand-card" id="cpu-right-card">
+      <div class="hand-label">Right Hand</div>
+      <span class="throw-emoji" id="cpu-right-emoji">❓</span>
+    </div>
+  </div>
+</div>
+
+<!-- Battle Zone -->
+<div class="panel" id="battle-panel">
+  <div class="panel-label">Battle Zone</div>
+  <div class="battle-zone">
+    <div class="battle-slot" id="slot-a">
+      <div class="slot-title" id="slot-a-title">—</div>
+      <div class="matchup" id="slot-a-matchup">❓ vs ❓</div>
+      <div class="mult-badge" id="slot-a-mult">×1</div>
+      <div class="outcome-text" id="slot-a-outcome"></div>
+    </div>
+    <div class="battle-slot" id="slot-b">
+      <div class="slot-title" id="slot-b-title">—</div>
+      <div class="matchup" id="slot-b-matchup">❓ vs ❓</div>
+      <div class="mult-badge" id="slot-b-mult">×1</div>
+      <div class="outcome-text" id="slot-b-outcome"></div>
+    </div>
+  </div>
+  <div id="resolving-msg" class="resolving-indicator" style="display:none;">Resolving…</div>
+</div>
+
+<!-- Player Panel -->
+<div class="panel" id="player-panel">
+  <div class="panel-label player">You — Player</div>
+  <div class="abacus" id="player-abacus"></div>
+  <div class="hp-label">HP: <span id="player-hp-label">10</span> / 20</div>
+
+  <div class="throws-row">
+    <div class="throws-group">
+      <div class="throws-group-label">Left Hand</div>
+      <div class="throw-btns" id="player-left-throws">
+        <button class="throw-btn" data-hand="left" data-throw="R" onclick="selectThrow('left','R',this)">
+          🪨<span class="btn-label">Rock</span>
+        </button>
+        <button class="throw-btn" data-hand="left" data-throw="P" onclick="selectThrow('left','P',this)">
+          📄<span class="btn-label">Paper</span>
+        </button>
+        <button class="throw-btn" data-hand="left" data-throw="S" onclick="selectThrow('left','S',this)">
+          ✂️<span class="btn-label">Scissors</span>
+        </button>
+      </div>
+    </div>
+    <div class="throws-group">
+      <div class="throws-group-label">Right Hand</div>
+      <div class="throw-btns" id="player-right-throws">
+        <button class="throw-btn" data-hand="right" data-throw="R" onclick="selectThrow('right','R',this)">
+          🪨<span class="btn-label">Rock</span>
+        </button>
+        <button class="throw-btn" data-hand="right" data-throw="P" onclick="selectThrow('right','P',this)">
+          📄<span class="btn-label">Paper</span>
+        </button>
+        <button class="throw-btn" data-hand="right" data-throw="S" onclick="selectThrow('right','S',this)">
+          ✂️<span class="btn-label">Scissors</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stance-section">
+    <div class="panel-label" style="margin-bottom:6px;">Stance</div>
+    <div class="stance-grid" id="stance-grid">
+      <button class="stance-btn" data-stance="straight" onclick="selectStance('straight',this)">
+        <div class="stance-name">↕ Straight</div>
+        <div class="stance-desc">L↔L, R↔R · 1×</div>
+      </button>
+      <button class="stance-btn" data-stance="cross" onclick="selectStance('cross',this)">
+        <div class="stance-name">✕ Cross</div>
+        <div class="stance-desc">L↔R, R↔L · 2× both ways</div>
+      </button>
+      <button class="stance-btn" data-stance="allin-left" onclick="selectStance('allin-left',this)">
+        <div class="stance-name">⬅ All-In Left</div>
+        <div class="stance-desc">Both→CpuL · 1.5× · right exposed (-1)</div>
+      </button>
+      <button class="stance-btn" data-stance="allin-right" onclick="selectStance('allin-right',this)">
+        <div class="stance-name">➡ All-In Right</div>
+        <div class="stance-desc">Both→CpuR · 1.5× · left exposed (-1)</div>
+      </button>
+    </div>
+  </div>
+
+  <div class="fight-row">
+    <button class="fight-btn" id="fight-btn" disabled onclick="startFight()">FIGHT!</button>
+  </div>
+</div>
+
+<!-- Battle Log -->
+<div class="panel">
+  <div class="panel-label">Battle Log</div>
+  <div class="log-panel" id="log-panel">
+    <div class="log-entry neutral">Welcome to Double RPS! Select your throws and stance, then hit FIGHT!</div>
+  </div>
+</div>
+
+<!-- Game Over Overlay -->
+<div class="overlay" id="overlay">
+  <div class="overlay-box">
+    <div class="overlay-title" id="overlay-title">VICTORY</div>
+    <div class="overlay-subtitle" id="overlay-subtitle">You reached 20 HP!</div>
+    <div class="overlay-turns">Completed in <span id="overlay-turns">0</span> turns</div>
+    <button class="play-again-btn" onclick="resetGame()">Play Again</button>
+  </div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+const THROWS = ['R', 'P', 'S'];
+const THROW_EMOJI = { R: '🪨', P: '📄', S: '✂️' };
+const THROW_NAME  = { R: 'Rock', P: 'Paper', S: 'Scissors' };
+
+let state = {
+  playerHP: 10,
+  cpuHP: 10,
+  turn: 1,
+  phase: 'select',   // 'select' | 'resolving'
+  playerLeft: null,
+  playerRight: null,
+  stance: null,
+};
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+function buildAbacus(id, cls) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let i = 0; i < 20; i++) {
+    const b = document.createElement('div');
+    b.className = 'bead empty ' + cls;
+    b.dataset.index = i;
+    el.appendChild(b);
+  }
+}
+
+function updateAbacus(id, cls, hp) {
+  const el = document.getElementById(id);
+  const beads = el.querySelectorAll('.bead');
+  beads.forEach((b, i) => {
+    const filled = i < hp;
+    b.className = 'bead ' + cls + (filled ? ' filled' : ' empty');
+  });
+}
+
+function animateAbacus(id, cls, oldHP, newHP) {
+  const el = document.getElementById(id);
+  const beads = el.querySelectorAll('.bead');
+  const min = Math.min(oldHP, newHP);
+  const max = Math.max(oldHP, newHP);
+
+  beads.forEach((b, i) => {
+    const filled = i < newHP;
+    b.className = 'bead ' + cls + (filled ? ' filled' : ' empty');
+    if (i >= min && i < max) {
+      setTimeout(() => {
+        b.classList.add('pop');
+        b.addEventListener('animationend', () => b.classList.remove('pop'), { once: true });
+      }, (i - min) * 40);
+    }
+  });
+}
+
+function init() {
+  buildAbacus('player-abacus', 'player');
+  buildAbacus('cpu-abacus', 'cpu');
+  updateAbacus('player-abacus', 'player', state.playerHP);
+  updateAbacus('cpu-abacus', 'cpu', state.cpuHP);
+  updateHPLabels();
+  resetBattleZone();
+  resetCPUCards();
+}
+
+// ─── Selections ───────────────────────────────────────────────────────────────
+function selectThrow(hand, throwVal, btn) {
+  if (state.phase !== 'select') return;
+  const group = document.getElementById('player-' + hand + '-throws');
+  group.querySelectorAll('.throw-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  if (hand === 'left') state.playerLeft = throwVal;
+  else state.playerRight = throwVal;
+  checkFightReady();
+}
+
+function selectStance(stance, btn) {
+  if (state.phase !== 'select') return;
+  document.querySelectorAll('.stance-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  state.stance = stance;
+  checkFightReady();
+}
+
+function checkFightReady() {
+  const ready = state.playerLeft && state.playerRight && state.stance;
+  document.getElementById('fight-btn').disabled = !ready;
+}
+
+// ─── Fight ────────────────────────────────────────────────────────────────────
+function rpsResult(a, b) {
+  // returns 1 if a wins, -1 if b wins, 0 if tie
+  if (a === b) return 0;
+  if ((a==='R'&&b==='S') || (a==='P'&&b==='R') || (a==='S'&&b==='P')) return 1;
+  return -1;
+}
+
+function cpuRandomThrow() {
+  return THROWS[Math.floor(Math.random() * 3)];
+}
+
+function resolveBattle(playerThrow, cpuThrow, mult) {
+  const r = rpsResult(playerThrow, cpuThrow);
+  const delta = Math.round(mult * 1);
+  return { result: r, delta, playerThrow, cpuThrow };
+}
+
+function clampHP(val) {
+  return Math.max(0, Math.min(20, val));
+}
+
+function startFight() {
+  if (state.phase !== 'select') return;
+  state.phase = 'resolving';
+  setControlsEnabled(false);
+
+  const cpuL = cpuRandomThrow();
+  const cpuR = cpuRandomThrow();
+  const { playerLeft, playerRight, stance } = state;
+
+  document.getElementById('resolving-msg').style.display = 'block';
+
+  // Build battles based on stance
+  let battles = [];
+  let autoHP = { player: 0, cpu: 0 };
+
+  if (stance === 'straight') {
+    battles = [
+      { playerThrow: playerLeft,  cpuThrow: cpuL, mult: 1,   slotIndex: 0, title: 'Your Left vs CPU Left' },
+      { playerThrow: playerRight, cpuThrow: cpuR, mult: 1,   slotIndex: 1, title: 'Your Right vs CPU Right' },
+    ];
+  } else if (stance === 'cross') {
+    battles = [
+      { playerThrow: playerLeft,  cpuThrow: cpuR, mult: 2,   slotIndex: 0, title: 'Your Left vs CPU Right' },
+      { playerThrow: playerRight, cpuThrow: cpuL, mult: 2,   slotIndex: 1, title: 'Your Right vs CPU Left' },
+    ];
+  } else if (stance === 'allin-left') {
+    battles = [
+      { playerThrow: playerLeft,  cpuThrow: cpuL, mult: 1.5, slotIndex: 0, title: 'Your Left vs CPU Left' },
+      { playerThrow: playerRight, cpuThrow: cpuL, mult: 1.5, slotIndex: 1, title: 'Your Right vs CPU Left' },
+    ];
+    autoHP.player = -1;
+    autoHP.cpu    = +1;
+  } else if (stance === 'allin-right') {
+    battles = [
+      { playerThrow: playerLeft,  cpuThrow: cpuR, mult: 1.5, slotIndex: 0, title: 'Your Left vs CPU Right' },
+      { playerThrow: playerRight, cpuThrow: cpuR, mult: 1.5, slotIndex: 1, title: 'Your Right vs CPU Right' },
+    ];
+    autoHP.player = -1;
+    autoHP.cpu    = +1;
+  }
+
+  const resolved = battles.map(b => ({
+    ...b,
+    ...resolveBattle(b.playerThrow, b.cpuThrow, b.mult)
+  }));
+
+  // Step 1: Reveal CPU throws (500ms)
+  setTimeout(() => {
+    document.getElementById('cpu-left-emoji').textContent  = THROW_EMOJI[cpuL];
+    document.getElementById('cpu-right-emoji').textContent = THROW_EMOJI[cpuR];
+    document.getElementById('cpu-left-card').classList.add('revealed');
+    document.getElementById('cpu-right-card').classList.add('revealed');
+
+    // Update battle zone slot titles and matchup emojis
+    resolved.forEach((b, idx) => {
+      const slot = document.getElementById('slot-' + (idx === 0 ? 'a' : 'b'));
+      document.getElementById('slot-' + (idx === 0 ? 'a' : 'b') + '-title').textContent = b.title;
+      document.getElementById('slot-' + (idx === 0 ? 'a' : 'b') + '-matchup').textContent =
+        THROW_EMOJI[b.playerThrow] + ' vs ' + THROW_EMOJI[b.cpuThrow];
+      document.getElementById('slot-' + (idx === 0 ? 'a' : 'b') + '-mult').textContent =
+        '×' + b.mult;
+    });
+
+    // Step 2: Reveal outcomes one by one (200ms apart)
+    let hpDeltas = { player: autoHP.player, cpu: autoHP.cpu };
+
+    resolved.forEach((b, idx) => {
+      setTimeout(() => {
+        const slotId = idx === 0 ? 'a' : 'b';
+        const slot   = document.getElementById('slot-' + slotId);
+        const outEl  = document.getElementById('slot-' + slotId + '-outcome');
+
+        let outcomeClass, outcomeText;
+        if (b.result === 1) {
+          outcomeClass = 'win';
+          outcomeText  = '+' + b.delta + ' HP!';
+          hpDeltas.player += b.delta;
+          hpDeltas.cpu    -= b.delta;
+        } else if (b.result === -1) {
+          outcomeClass = 'lose';
+          outcomeText  = '−' + b.delta + ' HP';
+          hpDeltas.player -= b.delta;
+          hpDeltas.cpu    += b.delta;
+        } else {
+          outcomeClass = 'tie';
+          outcomeText  = 'Tie';
+        }
+
+        slot.classList.add(outcomeClass);
+        outEl.textContent = outcomeText;
+        outEl.className   = 'outcome-text ' + outcomeClass;
+        setTimeout(() => outEl.classList.add('show'), 20);
+
+        // Also color the CPU cards
+        const cpuCardId = (b.title.includes('CPU Left')) ? 'cpu-left-card' : 'cpu-right-card';
+        // For cross/allin both slots may hit same card — just add the strongest result
+        const cpuCard = document.getElementById(cpuCardId);
+        if (b.result === -1) cpuCard.classList.remove('revealed'), cpuCard.classList.add('win');
+        else if (b.result === 1) { cpuCard.classList.remove('revealed'); cpuCard.classList.add('lose'); }
+
+        // Final step after last battle
+        if (idx === resolved.length - 1) {
+          setTimeout(() => applyHPChanges(hpDeltas, resolved, cpuL, cpuR), 300);
+        }
+      }, 500 + idx * 200);
+    });
+
+  }, 500);
+}
+
+function applyHPChanges(deltas, resolved, cpuL, cpuR) {
+  const oldPlayerHP = state.playerHP;
+  const oldCpuHP    = state.cpuHP;
+
+  state.playerHP = clampHP(state.playerHP + deltas.player);
+  state.cpuHP    = clampHP(state.cpuHP    + deltas.cpu);
+
+  animateAbacus('player-abacus', 'player', oldPlayerHP, state.playerHP);
+  animateAbacus('cpu-abacus',    'cpu',    oldCpuHP,    state.cpuHP);
+  updateHPLabels();
+
+  // Floating HP texts
+  spawnFloatHP('player-abacus', deltas.player);
+  spawnFloatHP('cpu-abacus',    deltas.cpu);
+
+  // Battle log
+  addLogEntry(resolved, deltas, cpuL, cpuR);
+
+  document.getElementById('resolving-msg').style.display = 'none';
+
+  // Check win condition
+  setTimeout(() => {
+    if (state.playerHP >= 20 || state.cpuHP >= 20 || state.playerHP <= 0 || state.cpuHP <= 0) {
+      showGameOver();
+      return;
+    }
+    // Next turn after 2 seconds
+    setTimeout(nextTurn, 700);
+  }, 600);
+}
+
+function spawnFloatHP(anchorId, delta) {
+  if (delta === 0) return;
+  const anchor = document.getElementById(anchorId);
+  const rect   = anchor.getBoundingClientRect();
+  const el     = document.createElement('div');
+  el.className = 'float-hp ' + (delta > 0 ? 'gain' : 'lose');
+  el.textContent = (delta > 0 ? '+' : '') + delta + ' HP';
+  el.style.left = (rect.left + rect.width / 2 - 20) + 'px';
+  el.style.top  = (rect.top + window.scrollY - 10) + 'px';
+  document.body.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+}
+
+function updateHPLabels() {
+  document.getElementById('player-hp-label').textContent = state.playerHP;
+  document.getElementById('cpu-hp-label').textContent    = state.cpuHP;
+}
+
+function addLogEntry(resolved, deltas, cpuL, cpuR) {
+  const logPanel = document.getElementById('log-panel');
+  const entry    = document.createElement('div');
+
+  const stanceMap = { straight: '↕', cross: '✕', 'allin-left': '⬅', 'allin-right': '➡' };
+  const netDelta  = deltas.player;
+  let cls = netDelta > 0 ? 'player-win' : netDelta < 0 ? 'player-lose' : 'neutral';
+
+  const parts = resolved.map(b => {
+    const r = b.result === 1 ? '✓' : b.result === -1 ? '✗' : '=';
+    return `${THROW_EMOJI[b.playerThrow]}${r}${THROW_EMOJI[b.cpuThrow]}`;
+  });
+
+  const autoNote = (state.stance === 'allin-left' || state.stance === 'allin-right') ? ' (exposed -1)' : '';
+
+  entry.className = 'log-entry ' + cls;
+  entry.textContent = `T${state.turn} ${stanceMap[state.stance]} | ${parts.join(' | ')} | Net: ${netDelta >= 0 ? '+' : ''}${netDelta} HP${autoNote}`;
+
+  logPanel.insertBefore(entry, logPanel.firstChild);
+
+  // Keep only 8 entries
+  while (logPanel.children.length > 8) {
+    logPanel.removeChild(logPanel.lastChild);
+  }
+}
+
+function nextTurn() {
+  state.turn++;
+  state.playerLeft  = null;
+  state.playerRight = null;
+  state.stance      = null;
+  state.phase       = 'select';
+
+  document.getElementById('turn-counter').textContent = state.turn;
+
+  // Clear selections
+  document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('fight-btn').disabled = true;
+
+  resetBattleZone();
+  resetCPUCards();
+  setControlsEnabled(true);
+}
+
+function resetBattleZone() {
+  ['a', 'b'].forEach(s => {
+    const slot = document.getElementById('slot-' + s);
+    slot.className = 'battle-slot';
+    document.getElementById('slot-' + s + '-title').textContent   = s === 'a' ? 'Battle 1' : 'Battle 2';
+    document.getElementById('slot-' + s + '-matchup').textContent = '❓ vs ❓';
+    document.getElementById('slot-' + s + '-mult').textContent    = '×?';
+    const out = document.getElementById('slot-' + s + '-outcome');
+    out.className  = 'outcome-text';
+    out.textContent = '';
+  });
+}
+
+function resetCPUCards() {
+  ['cpu-left-card', 'cpu-right-card'].forEach(id => {
+    const card = document.getElementById(id);
+    card.className = 'hand-card';
+  });
+  document.getElementById('cpu-left-emoji').textContent  = '❓';
+  document.getElementById('cpu-right-emoji').textContent = '❓';
+}
+
+function setControlsEnabled(enabled) {
+  document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => b.disabled = !enabled);
+}
+
+// ─── Game Over ────────────────────────────────────────────────────────────────
+function showGameOver() {
+  const playerWon = state.playerHP >= 20 || (state.cpuHP <= 0 && state.playerHP > state.cpuHP);
+  const titleEl   = document.getElementById('overlay-title');
+  const subEl     = document.getElementById('overlay-subtitle');
+
+  if (playerWon) {
+    titleEl.textContent = 'VICTORY';
+    titleEl.className   = 'overlay-title victory';
+    subEl.textContent   = 'You reached 20 HP!';
+  } else {
+    titleEl.textContent = 'DEFEATED';
+    titleEl.className   = 'overlay-title defeated';
+    subEl.textContent   = 'CPU reached 20 HP…';
+  }
+
+  document.getElementById('overlay-turns').textContent = state.turn;
+  document.getElementById('overlay').classList.add('show');
+}
+
+function resetGame() {
+  state = {
+    playerHP: 10,
+    cpuHP:    10,
+    turn:     1,
+    phase:    'select',
+    playerLeft:  null,
+    playerRight: null,
+    stance:      null,
+  };
+
+  document.getElementById('turn-counter').textContent = 1;
+  document.getElementById('overlay').classList.remove('show');
+
+  updateAbacus('player-abacus', 'player', 10);
+  updateAbacus('cpu-abacus',    'cpu',    10);
+  updateHPLabels();
+
+  document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => {
+    b.classList.remove('selected');
+    b.disabled = false;
+  });
+  document.getElementById('fight-btn').disabled = true;
+
+  const logPanel = document.getElementById('log-panel');
+  logPanel.innerHTML = '<div class="log-entry neutral">New game started! Select your throws and stance.</div>';
+
+  resetBattleZone();
+  resetCPUCards();
+  document.getElementById('resolving-msg').style.display = 'none';
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
