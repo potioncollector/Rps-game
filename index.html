@@ -143,6 +143,18 @@
 
   .hp-label span { font-weight: 700; color: var(--text); }
 
+  .cpu-stance-badge {
+    display: inline-block;
+    background: rgba(255,101,132,0.1);
+    border: 1px solid var(--cpu-color);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 0.7rem;
+    color: var(--cpu-color);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+
   /* CPU HANDS */
   .cpu-hands {
     display: flex;
@@ -177,14 +189,16 @@
   }
 
   .hand-card.revealed { border-color: var(--cpu-color); box-shadow: 0 0 12px rgba(255,101,132,0.3); }
+  .hand-card.defend   { border-color: var(--text-dim); border-style: dashed; opacity: 0.45; }
   .hand-card.win { border-color: var(--win); box-shadow: 0 0 12px rgba(74,222,128,0.3); }
   .hand-card.lose { border-color: var(--lose); box-shadow: 0 0 12px rgba(248,113,113,0.3); }
   .hand-card.tie { border-color: var(--tie); box-shadow: 0 0 12px rgba(250,204,21,0.3); }
 
   /* BATTLE ZONE */
   .battle-zone {
-    display: flex;
-    gap: 12px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .battle-slot {
@@ -562,6 +576,7 @@
   <div class="panel-label cpu">CPU — Enemy</div>
   <div class="abacus" id="cpu-abacus"></div>
   <div class="hp-label">HP: <span id="cpu-hp-label">10</span> / 20</div>
+  <div class="cpu-stance-badge" id="cpu-stance-badge">Stance: ?</div>
   <div class="cpu-hands">
     <div class="hand-card" id="cpu-left-card">
       <div class="hand-label">Left Hand</div>
@@ -577,20 +592,7 @@
 <!-- Battle Zone -->
 <div class="panel" id="battle-panel">
   <div class="panel-label">Battle Zone</div>
-  <div class="battle-zone">
-    <div class="battle-slot" id="slot-a">
-      <div class="slot-title" id="slot-a-title">—</div>
-      <div class="matchup" id="slot-a-matchup">❓ vs ❓</div>
-      <div class="mult-badge" id="slot-a-mult">×1</div>
-      <div class="outcome-text" id="slot-a-outcome"></div>
-    </div>
-    <div class="battle-slot" id="slot-b">
-      <div class="slot-title" id="slot-b-title">—</div>
-      <div class="matchup" id="slot-b-matchup">❓ vs ❓</div>
-      <div class="mult-badge" id="slot-b-mult">×1</div>
-      <div class="outcome-text" id="slot-b-outcome"></div>
-    </div>
-  </div>
+  <div class="battle-zone" id="battle-zone"></div>
   <div id="resolving-msg" class="resolving-indicator" style="display:none;">Resolving…</div>
 </div>
 
@@ -685,9 +687,18 @@
 </div>
 
 <script>
-// ─── State ────────────────────────────────────────────────────────────────────
+// ─── Constants & State ────────────────────────────────────────────────────────
 const THROWS = ['R', 'P', 'S'];
 const THROW_EMOJI = { R: '🪨', P: '📄', S: '✂️' };
+const STANCES = ['straight','cross','allin-left','allin-right','single-left','single-right'];
+const STANCE_NAMES = {
+  straight:      '↕ Straight',
+  cross:         '✕ Cross',
+  'allin-left':  '⬅ 2v1 Left',
+  'allin-right': '➡ 2v1 Right',
+  'single-left': '☝ Single Left',
+  'single-right':'☝ Single Right',
+};
 const THROW_NAME  = { R: 'Rock', P: 'Paper', S: 'Scissors' };
 
 let state = {
@@ -834,168 +845,181 @@ function rpsResult(a, b) {
   return -1;
 }
 
-function cpuRandomThrow() {
-  return THROWS[Math.floor(Math.random() * 3)];
-}
-
-function resolveBattle(playerThrow, cpuThrow, mult) {
-  const r = rpsResult(playerThrow, cpuThrow);
-  return { result: r, delta: mult, playerThrow, cpuThrow };
-}
-
 function fmtDelta(d) {
-  return d % 1 === 0 ? String(d) : d.toFixed(1);
+  const a = Math.abs(d);
+  return a % 1 === 0 ? String(a) : a.toFixed(1);
 }
 
-function clampHP(val) {
-  return Math.max(0, Math.min(20, val));
+function clampHP(v) { return Math.max(0, Math.min(20, v)); }
+
+// CPU picks randomly from all 6 stances; 2v1 forces same throw on both hands
+function cpuChoose() {
+  const stance = STANCES[Math.floor(Math.random() * STANCES.length)];
+  let L = THROWS[Math.floor(Math.random() * 3)];
+  let R = THROWS[Math.floor(Math.random() * 3)];
+  if (stance === 'allin-left' || stance === 'allin-right') R = L;
+  return { stance, leftThrow: L, rightThrow: R };
 }
 
+// Build all (playerHand, cpuHand) battle pairs from both stances.
+// Defending hands are fully excluded from every pairing.
+function buildBattles(pStance, pL, pR, cStance, cL, cR) {
+  const pDefend = pStance === 'single-left' ? 'R' : pStance === 'single-right' ? 'L' : null;
+  const cDefend = cStance === 'single-left' ? 'R' : cStance === 'single-right' ? 'L' : null;
+  const raw = [];
+  const pa = (ph, ch, m) => raw.push({ pHand: ph, cHand: ch, mult: m, attacker: 'player' });
+  const ca = (ph, ch, m) => raw.push({ pHand: ph, cHand: ch, mult: m, attacker: 'cpu' });
+
+  switch (pStance) {
+    case 'straight':     pa('L','L',1);   pa('R','R',1);   break;
+    case 'cross':        pa('L','R',2);   pa('R','L',2);   break;
+    case 'allin-left':   pa('L','L',1.5); pa('R','L',1.5); break;
+    case 'allin-right':  pa('L','R',1.5); pa('R','R',1.5); break;
+    case 'single-left':  pa('L','L',1);                    break;
+    case 'single-right': pa('R','R',1);                    break;
+  }
+  // CPU attacks normalised to (playerHand, cpuHand) coordinates
+  switch (cStance) {
+    case 'straight':     ca('L','L',1);   ca('R','R',1);   break;
+    case 'cross':        ca('R','L',2);   ca('L','R',2);   break;  // CL→PR, CR→PL
+    case 'allin-left':   ca('L','L',1.5); ca('L','R',1.5); break;  // CL+CR→PL
+    case 'allin-right':  ca('R','L',1.5); ca('R','R',1.5); break;  // CL+CR→PR
+    case 'single-left':  ca('L','L',1);                    break;  // CL→PL
+    case 'single-right': ca('R','R',1);                    break;  // CR→PR
+  }
+
+  const active = raw.filter(a =>
+    !(pDefend && a.pHand === pDefend) &&
+    !(cDefend && a.cHand === cDefend)
+  );
+
+  const map = {};
+  active.forEach(a => {
+    const key = a.pHand + a.cHand;
+    if (!map[key]) map[key] = {
+      pHand: a.pHand, cHand: a.cHand,
+      pThrow: a.pHand === 'L' ? pL : pR,
+      cThrow: a.cHand === 'L' ? cL : cR,
+      contribs: [],
+    };
+    map[key].contribs.push({ mult: a.mult, attacker: a.attacker });
+  });
+  return Object.values(map);
+}
+
+// Resolve HP deltas for one (playerHand, cpuHand) pair
+function resolvePair(pair) {
+  const rps = rpsResult(pair.pThrow, pair.cThrow); // 1=player wins
+  let pDelta = 0, cDelta = 0;
+  pair.contribs.forEach(c => {
+    const m = c.mult;
+    if (c.attacker === 'player') {
+      if (rps === 1)  { pDelta += m; cDelta -= m; }
+      if (rps === -1) { pDelta -= m; cDelta += m; }
+    } else {
+      if (rps === -1) { cDelta += m; pDelta -= m; }
+      if (rps === 1)  { cDelta -= m; pDelta += m; }
+    }
+  });
+  return { rps, pDelta, cDelta };
+}
+
+// ─── Fight ────────────────────────────────────────────────────────────────────
 function startFight() {
   if (state.phase !== 'select') return;
   state.phase = 'resolving';
   setControlsEnabled(false);
-
-  const cpuL = cpuRandomThrow();
-  const cpuR = cpuRandomThrow();
-  const { playerLeft, playerRight, stance } = state;
-
   document.getElementById('resolving-msg').style.display = 'block';
 
-  // Build battles based on stance
-  let battles     = [];
-  let defendSlots = [];  // slot ids ('a'/'b') shown as DEFENDING
+  const cpu = cpuChoose();
+  const { playerLeft, playerRight, stance } = state;
+  const battles  = buildBattles(stance, playerLeft, playerRight, cpu.stance, cpu.leftThrow, cpu.rightThrow);
+  const resolved = battles.map(b => ({ ...b, ...resolvePair(b) }));
 
-  if (stance === 'straight') {
-    battles = [
-      { playerThrow: playerLeft,  cpuThrow: cpuL, mult: 1,   slot: 'a', title: 'Left vs CPU Left' },
-      { playerThrow: playerRight, cpuThrow: cpuR, mult: 1,   slot: 'b', title: 'Right vs CPU Right' },
-    ];
-  } else if (stance === 'cross') {
-    battles = [
-      { playerThrow: playerLeft,  cpuThrow: cpuR, mult: 2,   slot: 'a', title: 'Left ✕ CPU Right' },
-      { playerThrow: playerRight, cpuThrow: cpuL, mult: 2,   slot: 'b', title: 'Right ✕ CPU Left' },
-    ];
-  } else if (stance === 'allin-left') {
-    battles = [
-      { playerThrow: playerLeft,  cpuThrow: cpuL, mult: 1.5, slot: 'a', title: 'Left → CPU Left (2v1)' },
-      { playerThrow: playerRight, cpuThrow: cpuL, mult: 1.5, slot: 'b', title: 'Right → CPU Left (2v1)' },
-    ];
-  } else if (stance === 'allin-right') {
-    battles = [
-      { playerThrow: playerLeft,  cpuThrow: cpuR, mult: 1.5, slot: 'a', title: 'Left → CPU Right (2v1)' },
-      { playerThrow: playerRight, cpuThrow: cpuR, mult: 1.5, slot: 'b', title: 'Right → CPU Right (2v1)' },
-    ];
-  } else if (stance === 'single-left') {
-    battles     = [{ playerThrow: playerLeft,  cpuThrow: cpuL, mult: 1, slot: 'a', title: 'Left vs CPU Left' }];
-    defendSlots = ['b'];
-  } else if (stance === 'single-right') {
-    battles     = [{ playerThrow: playerRight, cpuThrow: cpuR, mult: 1, slot: 'b', title: 'Right vs CPU Right' }];
-    defendSlots = ['a'];
-  }
+  // Build placeholder slots
+  const bz = document.getElementById('battle-zone');
+  bz.innerHTML = '';
+  resolved.forEach((_, i) => bz.insertAdjacentHTML('beforeend', `
+    <div class="battle-slot" id="slot-${i}">
+      <div class="slot-title" id="slot-${i}-title">…</div>
+      <div class="matchup" id="slot-${i}-matchup">❓ vs ❓</div>
+      <div class="mult-badge" id="slot-${i}-mult">…</div>
+      <div class="outcome-text" id="slot-${i}-outcome"></div>
+    </div>`));
 
-  const resolved = battles.map(b => ({
-    ...b,
-    ...resolveBattle(b.playerThrow, b.cpuThrow, b.mult)
-  }));
-
-  // Step 1: Reveal CPU throws (500ms)
+  // ── Step 1: reveal CPU (500 ms) ──
   setTimeout(() => {
-    document.getElementById('cpu-left-emoji').textContent  = THROW_EMOJI[cpuL];
-    document.getElementById('cpu-right-emoji').textContent = THROW_EMOJI[cpuR];
+    document.getElementById('cpu-stance-badge').textContent = 'Stance: ' + STANCE_NAMES[cpu.stance];
+    document.getElementById('cpu-left-emoji').textContent   = THROW_EMOJI[cpu.leftThrow];
+    document.getElementById('cpu-right-emoji').textContent  = THROW_EMOJI[cpu.rightThrow];
     document.getElementById('cpu-left-card').classList.add('revealed');
     document.getElementById('cpu-right-card').classList.add('revealed');
 
-    // Mark defending slots immediately
-    defendSlots.forEach(s => {
-      const label = s === 'a' ? 'Left — DEFENDING' : 'Right — DEFENDING';
-      document.getElementById('slot-' + s + '-title').textContent   = label;
-      document.getElementById('slot-' + s + '-matchup').textContent = '🛡';
-      document.getElementById('slot-' + s + '-mult').textContent    = '×0';
-      document.getElementById('slot-' + s).classList.add('defend');
+    // Mark CPU defending card
+    const cDef = cpu.stance === 'single-left' ? 'right' : cpu.stance === 'single-right' ? 'left' : null;
+    if (cDef) document.getElementById('cpu-' + cDef + '-card').classList.add('defend');
+
+    // Populate slot headers
+    resolved.forEach((b, i) => {
+      const ph  = b.pHand === 'L' ? 'Your Left' : 'Your Right';
+      const ch  = b.cHand === 'L' ? 'CPU Left'  : 'CPU Right';
+      const pAtk = b.contribs.some(c => c.attacker === 'player');
+      const cAtk = b.contribs.some(c => c.attacker === 'cpu');
+      const arr  = (pAtk && cAtk) ? '⟺' : pAtk ? '→' : '←';
+      const tot  = b.contribs.reduce((s, c) => s + c.mult, 0);
+      document.getElementById(`slot-${i}-title`).textContent   = `${ph} ${arr} ${ch}`;
+      document.getElementById(`slot-${i}-matchup`).textContent = THROW_EMOJI[b.pThrow] + ' vs ' + THROW_EMOJI[b.cThrow];
+      document.getElementById(`slot-${i}-mult`).textContent    = '±' + fmtDelta(tot) + ' HP';
     });
 
-    // Update active battle zone slot titles and matchup emojis
-    resolved.forEach(b => {
-      document.getElementById('slot-' + b.slot + '-title').textContent   = b.title;
-      document.getElementById('slot-' + b.slot + '-matchup').textContent =
-        THROW_EMOJI[b.playerThrow] + ' vs ' + THROW_EMOJI[b.cpuThrow];
-      document.getElementById('slot-' + b.slot + '-mult').textContent    = '×' + b.mult;
-    });
-
-    // Step 2: Reveal outcomes one by one (200ms apart)
-    let hpDeltas = { player: 0, cpu: 0 };
-
-    resolved.forEach((b, idx) => {
+    // ── Step 2: reveal outcomes (250 ms stagger) ──
+    let cumP = 0, cumC = 0;
+    resolved.forEach((b, i) => {
       setTimeout(() => {
-        const slot  = document.getElementById('slot-' + b.slot);
-        const outEl = document.getElementById('slot-' + b.slot + '-outcome');
-
-        let outcomeClass, outcomeText;
-        if (b.result === 1) {
-          outcomeClass = 'win';
-          outcomeText  = '+' + fmtDelta(b.delta) + ' HP!';
-          hpDeltas.player += b.delta;
-          hpDeltas.cpu    -= b.delta;
-        } else if (b.result === -1) {
-          outcomeClass = 'lose';
-          outcomeText  = '−' + fmtDelta(b.delta) + ' HP';
-          hpDeltas.player -= b.delta;
-          hpDeltas.cpu    += b.delta;
+        const slot  = document.getElementById('slot-' + i);
+        const outEl = document.getElementById('slot-' + i + '-outcome');
+        let cls, txt;
+        if (b.rps === 0) {
+          cls = 'tie';  txt = 'Tie';
+        } else if (b.pDelta > 0) {
+          cls = 'win';  txt = '+' + fmtDelta(b.pDelta) + ' HP!';
         } else {
-          outcomeClass = 'tie';
-          outcomeText  = 'Tie';
+          cls = 'lose'; txt = '−' + fmtDelta(Math.abs(b.pDelta)) + ' HP';
         }
-
-        slot.classList.add(outcomeClass);
-        outEl.textContent = outcomeText;
-        outEl.className   = 'outcome-text ' + outcomeClass;
+        slot.classList.add(cls);
+        outEl.textContent = txt;
+        outEl.className   = 'outcome-text ' + cls;
         setTimeout(() => outEl.classList.add('show'), 20);
 
-        // Color the corresponding CPU card
-        const cpuCardId = (b.title.includes('CPU Left')) ? 'cpu-left-card' : 'cpu-right-card';
-        const cpuCard   = document.getElementById(cpuCardId);
-        if (b.result === -1) { cpuCard.classList.remove('revealed'); cpuCard.classList.add('win');  }
-        else if (b.result === 1) { cpuCard.classList.remove('revealed'); cpuCard.classList.add('lose'); }
+        const cpuCard = document.getElementById('cpu-' + (b.cHand === 'L' ? 'left' : 'right') + '-card');
+        if (b.pDelta > 0)      { cpuCard.classList.remove('revealed'); cpuCard.classList.add('lose'); }
+        else if (b.pDelta < 0) { cpuCard.classList.remove('revealed'); cpuCard.classList.add('win'); }
 
-        // After last battle, apply HP changes
-        if (idx === resolved.length - 1) {
-          setTimeout(() => applyHPChanges(hpDeltas, resolved, cpuL, cpuR), 300);
-        }
-      }, 500 + idx * 200);
+        cumP += b.pDelta;
+        cumC += b.cDelta;
+        if (i === resolved.length - 1)
+          setTimeout(() => applyHPChanges({ player: cumP, cpu: cumC }, resolved, cpu.stance), 300);
+      }, 500 + i * 250);
     });
-
   }, 500);
 }
 
-function applyHPChanges(deltas, resolved, cpuL, cpuR) {
-  const oldPlayerHP = state.playerHP;
-  const oldCpuHP    = state.cpuHP;
-
+function applyHPChanges(deltas, resolved, cpuStance) {
+  const oldP = state.playerHP, oldC = state.cpuHP;
   state.playerHP = clampHP(state.playerHP + deltas.player);
   state.cpuHP    = clampHP(state.cpuHP    + deltas.cpu);
-
-  animateAbacus('player-abacus', 'player', oldPlayerHP, state.playerHP);
-  animateAbacus('cpu-abacus',    'cpu',    oldCpuHP,    state.cpuHP);
+  animateAbacus('player-abacus', 'player', oldP, state.playerHP);
+  animateAbacus('cpu-abacus',    'cpu',    oldC, state.cpuHP);
   updateHPLabels();
-
-  // Floating HP texts
   spawnFloatHP('player-abacus', deltas.player);
   spawnFloatHP('cpu-abacus',    deltas.cpu);
-
-  // Battle log
-  addLogEntry(resolved, deltas, cpuL, cpuR);
-
+  addLogEntry(resolved, deltas, cpuStance);
   document.getElementById('resolving-msg').style.display = 'none';
-
-  // Check win condition
   setTimeout(() => {
-    if (state.playerHP >= 20 || state.cpuHP >= 20 || state.playerHP <= 0 || state.cpuHP <= 0) {
+    if (state.playerHP >= 20 || state.cpuHP >= 20 || state.playerHP <= 0 || state.cpuHP <= 0)
       showGameOver();
-      return;
-    }
-    // Next turn after 2 seconds
-    setTimeout(nextTurn, 700);
+    else
+      setTimeout(nextTurn, 700);
   }, 600);
 }
 
@@ -1004,10 +1028,10 @@ function spawnFloatHP(anchorId, delta) {
   const anchor = document.getElementById(anchorId);
   const rect   = anchor.getBoundingClientRect();
   const el     = document.createElement('div');
-  el.className = 'float-hp ' + (delta > 0 ? 'gain' : 'lose');
+  el.className  = 'float-hp ' + (delta > 0 ? 'gain' : 'lose');
   el.textContent = (delta > 0 ? '+' : '') + fmtDelta(delta) + ' HP';
-  el.style.left = (rect.left + rect.width / 2 - 20) + 'px';
-  el.style.top  = (rect.top + window.scrollY - 10) + 'px';
+  el.style.left  = (rect.left + rect.width / 2 - 20) + 'px';
+  el.style.top   = (rect.top + window.scrollY - 10) + 'px';
   document.body.appendChild(el);
   el.addEventListener('animationend', () => el.remove());
 }
@@ -1017,73 +1041,40 @@ function updateHPLabels() {
   document.getElementById('cpu-hp-label').textContent    = fmtDelta(state.cpuHP);
 }
 
-function addLogEntry(resolved, deltas, cpuL, cpuR) {
-  const logPanel = document.getElementById('log-panel');
-  const entry    = document.createElement('div');
-
-  const stanceMap = {
-    straight: '↕', cross: '✕',
-    'allin-left': '⬅2v1', 'allin-right': '➡2v1',
-    'single-left': '☝L', 'single-right': '☝R'
-  };
-  const netDelta = deltas.player;
-  let cls = netDelta > 0 ? 'player-win' : netDelta < 0 ? 'player-lose' : 'neutral';
-
-  const parts = resolved.map(b => {
-    const r = b.result === 1 ? '✓' : b.result === -1 ? '✗' : '=';
-    return `${THROW_EMOJI[b.playerThrow]}${r}${THROW_EMOJI[b.cpuThrow]}`;
-  });
-
-  const netStr = fmtDelta(Math.abs(netDelta));
-  entry.className = 'log-entry ' + cls;
-  entry.textContent = `T${state.turn} ${stanceMap[state.stance]} | ${parts.join(' | ')} | Net: ${netDelta >= 0 ? '+' : '-'}${netStr} HP`;
-
-  logPanel.insertBefore(entry, logPanel.firstChild);
-
-  // Keep only 8 entries
-  while (logPanel.children.length > 8) {
-    logPanel.removeChild(logPanel.lastChild);
-  }
+function addLogEntry(resolved, deltas, cpuStance) {
+  const SMAP = { straight:'↕', cross:'✕', 'allin-left':'⬅2v1', 'allin-right':'➡2v1', 'single-left':'☝L', 'single-right':'☝R' };
+  const net  = deltas.player;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry ' + (net > 0 ? 'player-win' : net < 0 ? 'player-lose' : 'neutral');
+  const parts = resolved.map(b => THROW_EMOJI[b.pThrow] + (b.rps===1?'✓':b.rps===-1?'✗':'=') + THROW_EMOJI[b.cThrow]);
+  entry.textContent = `T${state.turn} P:${SMAP[state.stance]} C:${SMAP[cpuStance]} | ${parts.join(' ')} | ${net>=0?'+':''}${fmtDelta(net)} HP`;
+  const lp = document.getElementById('log-panel');
+  lp.insertBefore(entry, lp.firstChild);
+  while (lp.children.length > 8) lp.removeChild(lp.lastChild);
 }
 
+// ─── Turn Flow ────────────────────────────────────────────────────────────────
 function nextTurn() {
   state.turn++;
-  state.playerLeft  = null;
-  state.playerRight = null;
-  state.stance      = null;
-  state.phase       = 'select';
-
+  state.playerLeft = state.playerRight = state.stance = null;
+  state.phase = 'select';
   document.getElementById('turn-counter').textContent = state.turn;
-
-  // Clear selections and unlock all buttons
   document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => b.classList.remove('selected', 'locked'));
   document.getElementById('fight-btn').disabled = true;
-
   resetBattleZone();
   resetCPUCards();
   setControlsEnabled(true);
 }
 
 function resetBattleZone() {
-  ['a', 'b'].forEach(s => {
-    const slot = document.getElementById('slot-' + s);
-    slot.className = 'battle-slot';
-    document.getElementById('slot-' + s + '-title').textContent   = s === 'a' ? 'Battle 1' : 'Battle 2';
-    document.getElementById('slot-' + s + '-matchup').textContent = '❓ vs ❓';
-    document.getElementById('slot-' + s + '-mult').textContent    = '×?';
-    const out = document.getElementById('slot-' + s + '-outcome');
-    out.className  = 'outcome-text';
-    out.textContent = '';
-  });
+  document.getElementById('battle-zone').innerHTML = '';
 }
 
 function resetCPUCards() {
-  ['cpu-left-card', 'cpu-right-card'].forEach(id => {
-    const card = document.getElementById(id);
-    card.className = 'hand-card';
-  });
+  ['cpu-left-card','cpu-right-card'].forEach(id => document.getElementById(id).className = 'hand-card');
   document.getElementById('cpu-left-emoji').textContent  = '❓';
   document.getElementById('cpu-right-emoji').textContent = '❓';
+  document.getElementById('cpu-stance-badge').textContent = 'Stance: ?';
 }
 
 function setControlsEnabled(enabled) {
@@ -1093,50 +1084,24 @@ function setControlsEnabled(enabled) {
 // ─── Game Over ────────────────────────────────────────────────────────────────
 function showGameOver() {
   const playerWon = state.playerHP >= 20 || (state.cpuHP <= 0 && state.playerHP > state.cpuHP);
-  const titleEl   = document.getElementById('overlay-title');
-  const subEl     = document.getElementById('overlay-subtitle');
-
-  if (playerWon) {
-    titleEl.textContent = 'VICTORY';
-    titleEl.className   = 'overlay-title victory';
-    subEl.textContent   = 'You reached 20 HP!';
-  } else {
-    titleEl.textContent = 'DEFEATED';
-    titleEl.className   = 'overlay-title defeated';
-    subEl.textContent   = 'CPU reached 20 HP…';
-  }
-
+  const titleEl = document.getElementById('overlay-title');
+  const subEl   = document.getElementById('overlay-subtitle');
+  if (playerWon) { titleEl.textContent = 'VICTORY'; titleEl.className = 'overlay-title victory'; subEl.textContent = 'You reached 20 HP!'; }
+  else           { titleEl.textContent = 'DEFEATED'; titleEl.className = 'overlay-title defeated'; subEl.textContent = 'CPU reached 20 HP…'; }
   document.getElementById('overlay-turns').textContent = state.turn;
   document.getElementById('overlay').classList.add('show');
 }
 
 function resetGame() {
-  state = {
-    playerHP: 10,
-    cpuHP:    10,
-    turn:     1,
-    phase:    'select',
-    playerLeft:  null,
-    playerRight: null,
-    stance:      null,
-  };
-
+  state = { playerHP: 10, cpuHP: 10, turn: 1, phase: 'select', playerLeft: null, playerRight: null, stance: null };
   document.getElementById('turn-counter').textContent = 1;
   document.getElementById('overlay').classList.remove('show');
-
   updateAbacus('player-abacus', 'player', 10);
-  updateAbacus('cpu-abacus',    'cpu',    10);
+  updateAbacus('cpu-abacus', 'cpu', 10);
   updateHPLabels();
-
-  document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => {
-    b.classList.remove('selected', 'locked');
-    b.disabled = false;
-  });
+  document.querySelectorAll('.throw-btn, .stance-btn').forEach(b => { b.classList.remove('selected','locked'); b.disabled = false; });
   document.getElementById('fight-btn').disabled = true;
-
-  const logPanel = document.getElementById('log-panel');
-  logPanel.innerHTML = '<div class="log-entry neutral">New game started! Select your throws and stance.</div>';
-
+  document.getElementById('log-panel').innerHTML = '<div class="log-entry neutral">New game started! Select your throws and stance.</div>';
   resetBattleZone();
   resetCPUCards();
   document.getElementById('resolving-msg').style.display = 'none';
